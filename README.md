@@ -557,7 +557,6 @@ ROS bags can be used to record real robot data for training agents or for offlin
    ./isaaclab.sh -p scripts/tutorials/02_scene/inspire_scene_multipleconfig.py --num_envs 1 --target_joint index_proximal_joint
    ```
 2.**Play ros bag on loop to train**:
-# Play back bag data
 ```bash
 ros2 bag play inspire_hand_joints_20250101_120000/ --loop
 
