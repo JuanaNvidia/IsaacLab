@@ -1527,6 +1527,9 @@ class Articulation(AssetBase):
         """Log information about the articulation.
 
         Note: We purposefully read the values from the simulator to ensure that the values are configured as expected.
+        
+        Returns:
+            str: Formatted string containing the joint and tendon information tables.
         """
         # read out all joint parameters from simulation
         # -- gains
@@ -1571,9 +1574,10 @@ class Articulation(AssetBase):
                 effort_limits[index],
             ])
         # convert table to string
-        omni.log.info(f"Simulation parameters for joints in {self.cfg.prim_path}:\n" + joint_table.get_string())
+        joint_info = f"Simulation parameters for joints in {self.cfg.prim_path}:\n" + joint_table.get_string()
 
         # read out all tendon parameters from simulation
+        tendon_info = ""
         if self.num_fixed_tendons > 0:
             # -- gains
             ft_stiffnesses = self.root_physx_view.get_fixed_tendon_stiffnesses()[0].tolist()
@@ -1596,7 +1600,7 @@ class Articulation(AssetBase):
                 "Offset",
             ]
             tendon_table.float_format = ".3"
-            joint_table.custom_format["Limits"] = lambda f, v: f"[{v[0]:.3f}, {v[1]:.3f}]"
+            tendon_table.custom_format["Limits"] = lambda f, v: f"[{v[0]:.3f}, {v[1]:.3f}]"
             # add info on each term
             for index in range(self.num_fixed_tendons):
                 tendon_table.add_row([
@@ -1609,7 +1613,10 @@ class Articulation(AssetBase):
                     ft_offsets[index],
                 ])
             # convert table to string
-            omni.log.info(f"Simulation parameters for tendons in {self.cfg.prim_path}:\n" + tendon_table.get_string())
+            tendon_info = f"\nSimulation parameters for tendons in {self.cfg.prim_path}:\n" + tendon_table.get_string()
+
+        # Return the combined information
+        return joint_info + tendon_info
 
     """
     Deprecated methods.

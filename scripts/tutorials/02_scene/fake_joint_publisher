@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Float64MultiArray
+import time
+import math
+import argparse
+
+class FakeJointPublisher(Node):
+    """Fake joint publisher that simulates joint movements for testing."""
+    
+    def __init__(self, joint_index, frequency):
+        super().__init__('fake_joint_publisher')
+        
+        # Create publisher for joint values
+        self.publisher = self.create_publisher(
+            Float64MultiArray,
+            '/real_hand_joints',
+            10
+        )
+        
+        # Joint configuration
+        self.joint_index = joint_index
+        self.sweep_frequency = frequency  # Hz - how fast the joint sweeps 0->1000->0
+        self.publish_frequency = 2.0  # Hz - fixed publishing rate
+        
+        # Joint names for reference
+        self.joint_names = [
+            "pinky_proximal_joint",
+            "ring_proximal_joint",
+            "middle_proximal_joint", 
+            "index_proximal_joint",
+            "thumb_proximal_pitch_joint",
+            "thumb_proximal_yaw_joint",
+        ]
+        
+        # Initialize joint values (all at 0)
+        self.joint_values = [0.0] * 6
+        
+        # Timing
+        self.start_time = time.time()
+        
+        # Create timer for publishing at fixed rate
+        self.timer = self.create_timer(1.0 / self.publish_frequency, self.publish_joint_values)
+        
+        self.get_logger().info(f'Fake joint publisher initialized')
+        self.get_logger().info(f'Moving joint: {self.joint_names[joint_index]} (index {joint_index})')
+        self.get_logger().info(f'Sweep frequency: {frequency} Hz')
+        self.get_logger().info(f'Publishing frequency: {self.publish_frequency} Hz')
+        self.get_logger().info(f'Publishing to: /real_hand_joints')
+    
+    def publish_joint_values(self):
+        """Publish joint values with the selected joint moving through its range."""
+        # Calculate current time
+        current_time = time.time() - self.start_time
+        
+        # Create linear sweep motion from 0 to 1000 and back
+        # Calculate the period for one complete cycle (0->1000->0)
+        cycle_period = 2.0 / self.sweep_frequency  # 2 seconds for complete cycle at 0.5 Hz
+        
+        # Calculate position within the current cycle
+        cycle_time = current_time % cycle_period
+        cycle_progress = cycle_time / cycle_period  # 0.0 to 1.0
+        
+        # Create triangular wave pattern: 0->1000->0
+        if cycle_progress < 0.5:
+            # First half: 0 to 1000
+            joint_value = cycle_progress * 2.0 * 1000.0
+        else:
+            # Second half: 1000 back to 0
+            joint_value = (1.0 - cycle_progress) * 2.0 * 1000.0
+        
+        # Update the selected joint
+        self.joint_values[self.joint_index] = joint_value
+        
+        # Create and publish message
+        msg = Float64MultiArray()
+        msg.data = self.joint_values
+        
+        self.publisher.publish(msg)
+        
+        # Log current values (less frequently to avoid spam)
+        if int(current_time * 10) % 10 == 0:  # Log every 1 second
+            self.get_logger().info(f'Published: {self.joint_values}')
+            self.get_logger().info(f'Moving joint {self.joint_names[self.joint_index]}: {joint_value:.1f}')
+
+
+def main():
+    """Main function."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Fake joint publisher for testing')
+    parser.add_argument('--joint', type=int, default=0, 
+                       help='Joint index to move (0-5). 0=pinky, 1=ring, 2=middle, 3=index, 4=thumb_pitch, 5=thumb_yaw')
+    parser.add_argument('--frequency', type=float, default=0.5,
+                       help='Sweep frequency in Hz - how fast joint moves 0->1000->0 (default: 0.5). Publishing rate is fixed at 2 Hz.')
+    
+    args = parser.parse_args()
+    
+    # Validate joint index
+    if args.joint < 0 or args.joint > 5:
+        print("Error: Joint index must be between 0 and 5")
+        print("0: pinky_proximal_joint")
+        print("1: ring_proximal_joint") 
+        print("2: middle_proximal_joint")
+        print("3: index_proximal_joint")
+        print("4: thumb_proximal_pitch_joint")
+        print("5: thumb_proximal_yaw_joint")
+        return
+    
+    # Initialize ROS2
+    rclpy.init()
+    
+    # Create and run the publisher
+    publisher = FakeJointPublisher(args.joint, args.frequency)
+    
+    try:
+        print(f"Starting fake joint publisher...")
+        print(f"Moving joint {args.joint} at {args.frequency} Hz")
+        print(f"Press Ctrl+C to stop")
+        rclpy.spin(publisher)
+    except KeyboardInterrupt:
+        print("\nShutting down fake joint publisher...")
+    finally:
+        publisher.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

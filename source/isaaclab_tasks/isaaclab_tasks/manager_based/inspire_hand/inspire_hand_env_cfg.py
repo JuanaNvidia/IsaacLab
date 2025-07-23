@@ -3,45 +3,153 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from __future__ import annotations
-
-from dataclasses import MISSING
+from isaaclab_assets.robots.inspire_hand import INSPIRE_HAND_CFG
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, RigidObjectCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
-from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.markers import VisualizationMarkersCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sim.simulation_cfg import PhysxCfg, SimulationCfg
+from isaaclab.sim import PhysxCfg, SimulationCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import RigidBodyMaterialCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.utils.noise import AdditiveGaussianNoiseCfg as Gnoise
+from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg, AdditiveGaussianNoiseCfg as Gnoise
 
 import isaaclab_tasks.manager_based.manipulation.inhand.mdp as mdp
 
-##
-# Scene definition
-##
+
+@configclass
+class EventCfg:
+    """Configuration for randomization."""
+
+    # -- robot
+    robot_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="reset",
+        min_step_count_between_reset=720,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "static_friction_range": (0.7, 1.3),
+            "dynamic_friction_range": (1.0, 1.0),
+            "restitution_range": (0.0, 0.1),  # Reduced from 1.0 to make robot less bouncy
+            "num_buckets": 250,
+        },
+    )
+    robot_joint_stiffness_and_damping = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        min_step_count_between_reset=720,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (0.1, 100),  # Reduced stiffness for more movement
+            "damping_distribution_params": (0.1, 1),  # Reduced damping for more movement
+            "operation": "scale",
+            "distribution": "log_uniform",
+        },
+    )
+    robot_joint_pos_limits = EventTerm(
+        func=mdp.randomize_joint_parameters,
+        min_step_count_between_reset=720,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "lower_limit_distribution_params": (0.00, 0.01),
+            "upper_limit_distribution_params": (0.00, 0.01),
+            "operation": "add",
+            "distribution": "gaussian",
+        },
+    )
+
+    # -- object
+    object_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        min_step_count_between_reset=720,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("object"),
+            "static_friction_range": (0.7, 1.3),
+            "dynamic_friction_range": (1.0, 1.0),
+            "restitution_range": (0.0, 0.1),  # Reduced from 1.0 to make objects less bouncy
+            "num_buckets": 250,
+        },
+    )
+    object_scale_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        min_step_count_between_reset=720,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("object"),
+            "mass_distribution_params": (0.5, 1.5),
+            "operation": "scale",
+            "distribution": "uniform",
+        },
+    )
+
+    # -- scene
+    reset_gravity = EventTerm(
+        func=mdp.randomize_physics_scene_gravity,
+        mode="interval",
+        is_global_time=True,
+        interval_range_s=(36.0, 36.0),
+        params={
+            "gravity_distribution_params": ([0.0, 0.0, 0.0], [0.0, 0.0, 0.4]),
+            "operation": "add",
+            "distribution": "gaussian",
+        },
+    )
+
+    # -- reset events
+    reset_object = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {"x": [-0.02, 0.02], "y": [-0.02, 0.02], "z": [-0.02, 0.02]},
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("object"),
+        },
+    )
+
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (-0.1, 0.1),
+            "velocity_range": (-0.01, 0.01),
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
 
 
 @configclass
-class InHandObjectSceneCfg(InteractiveSceneCfg):
-    """Configuration for a scene with an object and a dexterous hand."""
+class SceneCfg(InteractiveSceneCfg):
+    """Scene configuration for the Inspire Hand environment."""
 
-    # robots
-    robot: ArticulationCfg = MISSING
+    # robot - create a new configuration instead of using replace
+    robot: ArticulationCfg = ArticulationCfg(
+        prim_path="/World/envs/env_.*/Robot",
+        spawn=INSPIRE_HAND_CFG.spawn,
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=(0.0, 0.0, 0.5),
+            rot=(0.0, 0.7071, 0.0, 0.7071),
+            joint_pos={".*": 0.0},
+        ),
+        actuators=INSPIRE_HAND_CFG.actuators,
+        soft_joint_pos_limit_factor=INSPIRE_HAND_CFG.soft_joint_pos_limit_factor,
+    )
 
-    # objects
+    # in-hand object
     object: RigidObjectCfg = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/object",
+        prim_path="/World/envs/env_.*/object",
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+            scale=(1.0,1.0,1.0),  # Scale to half size
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -52,26 +160,16 @@ class InHandObjectSceneCfg(InteractiveSceneCfg):
                 stabilization_threshold=0.0025,
                 max_depenetration_velocity=1000.0,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(density=400.0),
+            mass_props=sim_utils.MassPropertiesCfg(density=567.0),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -0.19, 0.56), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.15, 0.0, 0.55), rot=(0.0, 0.7071, 0.0, 0.7071)),
     )
 
     # lights
     light = AssetBaseCfg(
         prim_path="/World/light",
-        spawn=sim_utils.DistantLightCfg(color=(0.95, 0.95, 0.95), intensity=1000.0),
+        spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75)),
     )
-
-    dome_light = AssetBaseCfg(
-        prim_path="/World/domeLight",
-        spawn=sim_utils.DomeLightCfg(color=(0.02, 0.02, 0.02), intensity=1000.0),
-    )
-
-
-##
-# MDP settings
-##
 
 
 @configclass
@@ -103,7 +201,7 @@ class ActionsCfg:
 
 @configclass
 class ObservationsCfg:
-    """Observation specifications for the MDP."""
+    """Observation specifications for the environment."""
 
     @configclass
     class KinematicObsGroupCfg(ObsGroup):
@@ -170,88 +268,6 @@ class ObservationsCfg:
 
 
 @configclass
-class EventCfg:
-    """Configuration for randomization."""
-
-    # startup
-    # -- robot
-    robot_physics_material = EventTerm(
-        func=mdp.randomize_rigid_body_material,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.7, 1.3),
-            "dynamic_friction_range": (0.7, 1.3),
-            "restitution_range": (0.0, 0.0),
-            "num_buckets": 250,
-        },
-    )
-    robot_scale_mass = EventTerm(
-        func=mdp.randomize_rigid_body_mass,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "mass_distribution_params": (0.95, 1.05),
-            "operation": "scale",
-        },
-    )
-    # robot_joint_stiffness_and_damping = EventTerm(
-    #     func=mdp.randomize_actuator_gains,
-    #     mode="startup",
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-    #         "stiffness_distribution_params": (0.3, 3.0),  # default: 3.0
-    #         "damping_distribution_params": (0.75, 1.5),  # default: 0.1
-    #         "operation": "scale",
-    #         "distribution": "log_uniform",
-    #     },
-    # )
-
-    # -- object
-    object_physics_material = EventTerm(
-        func=mdp.randomize_rigid_body_material,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("object", body_names=".*"),
-            "static_friction_range": (0.7, 1.3),
-            "dynamic_friction_range": (0.7, 1.3),
-            "restitution_range": (0.0, 0.0),
-            "num_buckets": 250,
-        },
-    )
-    object_scale_mass = EventTerm(
-        func=mdp.randomize_rigid_body_mass,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("object"),
-            "mass_distribution_params": (0.4, 1.6),
-            "operation": "scale",
-        },
-    )
-
-    # reset
-    reset_object = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "pose_range": {"x": [-0.01, 0.01], "y": [-0.01, 0.01], "z": [-0.01, 0.01]},
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object", body_names=".*"),
-        },
-    )
-    reset_robot_joints = EventTerm(
-        func=mdp.reset_joints_within_limits_range,
-        mode="reset",
-        params={
-            "position_range": {".*": [0.2, 0.2]},
-            "velocity_range": {".*": [0.0, 0.0]},
-            "use_default_offset": True,
-            "operation": "scale",
-        },
-    )
-
-
-@configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
 
@@ -302,45 +318,52 @@ class TerminationsCfg:
     # )
 
 
-##
-# Environment configuration
-##
-
-
 @configclass
-class InHandObjectEnvCfg(ManagerBasedRLEnvCfg):
-    """Configuration for the in hand reorientation environment."""
+class InspireHandEnvCfg(ManagerBasedRLEnvCfg):
+    """Configuration for the Inspire Hand in-hand manipulation environment."""
 
     # Scene settings
-    scene: InHandObjectSceneCfg = InHandObjectSceneCfg(num_envs=8192, env_spacing=0.6)
-    # Simulation settings
-    sim: SimulationCfg = SimulationCfg(
-        physics_material=RigidBodyMaterialCfg(
-            static_friction=1.0,
-            dynamic_friction=1.0,
-        ),
-        physx=PhysxCfg(
-            bounce_threshold_velocity=0.2,
-            gpu_max_rigid_contact_count=2**20,
-            gpu_max_rigid_patch_count=2**23,
-        ),
-    )
+    scene: SceneCfg = SceneCfg(num_envs=8192, env_spacing=0.75, replicate_physics=True)
+
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     commands: CommandsCfg = CommandsCfg()
+    events: EventCfg = EventCfg()
+
     # MDP settings
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
-    events: EventCfg = EventCfg()
 
-    def __post_init__(self):
+    # Post initialization
+    def __post_init__(self) -> None:
         """Post initialization."""
         # general settings
-        self.decimation = 4
-        self.episode_length_s = 20.0
+        self.decimation = 2
+        self.episode_length_s = 10.0
+        # viewer settings
+        self.viewer.eye = (8.0, 0.0, 5.0)
         # simulation settings
-        self.sim.dt = 1.0 / 120.0
+        self.sim.dt = 1 / 120
         self.sim.render_interval = self.decimation
-        # change viewer settings
-        self.viewer.eye = (2.0, 2.0, 2.0)
+        self.sim.physics_material = RigidBodyMaterialCfg(
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,  # Set default restitution to 0 for less bouncy behavior
+        )
+        self.sim.physx = PhysxCfg(
+            bounce_threshold_velocity=0.2,
+        )
+
+    # Domain randomization config
+    events: EventCfg = EventCfg()
+
+    # Action and observation noise
+    action_noise_model: NoiseModelWithAdditiveBiasCfg = NoiseModelWithAdditiveBiasCfg(
+        noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.05, operation="add"),
+        bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.015, operation="abs"),
+    )
+    observation_noise_model: NoiseModelWithAdditiveBiasCfg = NoiseModelWithAdditiveBiasCfg(
+        noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.002, operation="add"),
+        bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.0001, operation="abs"),
+    ) 
