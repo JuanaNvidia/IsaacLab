@@ -432,8 +432,8 @@ python interactive_hand_testing.py
 ##### Position Values
 
 - **Range**: 0-1000 (dimensionless)
-- **0**: Fully extended/neutral position
-- **1000**: Fully bent/rotated position
+- **0**: Fully bent position
+- **1000**: Fully extended position
 - **-1**: No change (maintain current position)
 
 #### Real-Time ROS2 Integration
