@@ -36,6 +36,340 @@ Our [documentation page](https://isaac-sim.github.io/IsaacLab) provides everythi
 - [Tutorials](https://isaac-sim.github.io/IsaacLab/main/source/tutorials/index.html)
 - [Available environments](https://isaac-sim.github.io/IsaacLab/main/source/overview/environments.html)
 
+## Inspire Hand Genetic Algorithm Optimization
+
+This repository includes an advanced genetic algorithm implementation for optimizing Inspire Hand joint parameters with ROS2 integration. The system can optimize stiffness and damping parameters for individual joints while tracking real-time joint commands from ROS2 topics.
+
+### Key Features
+
+- **Genetic Algorithm Optimization**: Automatically optimizes joint stiffness and damping parameters
+- **ROS2 Integration**: Receives real-time joint commands from `/real_hand_joints` topic
+- **Multi-Robot Testing**: Tests 20 different robot configurations simultaneously
+- **Target Joint Selection**: Focus optimization on specific joints (index, middle, pinky, ring, thumb)
+- **Real-time Error Tracking**: Monitors and reports joint tracking errors
+
+### Prerequisites
+
+1. **Isaac Sim 4.5.0** installed and configured
+2. **ROS2** (for real-time joint control)
+3. **Python 3.10** with required dependencies
+
+### Quick Start
+
+#### 1. Basic Usage (Without ROS2)
+
+Run the genetic algorithm optimization with default settings:
+
+```bash
+# Navigate to IsaacLab root directory
+cd /path/to/IsaacLab
+
+# Run with default target joint (pinky_proximal_joint)
+./isaaclab.sh -p scripts/tutorials/02_scene/inspire_scene_multipleconfig.py --num_envs 1
+
+# Run with specific target joint
+./isaaclab.sh -p scripts/tutorials/02_scene/inspire_scene_multipleconfig.py --num_envs 1 --target_joint index_proximal_joint
+```
+
+#### 2. With ROS2 Integration
+
+1. **Start ROS2 joint publisher** (in a separate terminal):
+```bash
+
+Publish to /real_hand_joints topic with your own data
+Current expected format: 6 joint angles in range 0-1000
+[little, ring, middle, index, thumb_pitch, thumb_yaw]
+```
+
+2. **Run the genetic algorithm**:
+```bash
+./isaaclab.sh -p scripts/tutorials/02_scene/inspire_scene_multipleconfig.py --num_envs 1 --target_joint index_proximal_joint
+```
+
+### Available Target Joints
+
+The genetic algorithm can optimize any of these joints:
+- `index_proximal_joint` - Index finger proximal joint
+- `middle_proximal_joint` - Middle finger proximal joint  
+- `pinky_proximal_joint` - Pinky finger proximal joint
+- `ring_proximal_joint` - Ring finger proximal joint
+- `thumb_proximal_yaw_joint` - Thumb yaw joint
+- `thumb_proximal_pitch_joint` - Thumb pitch joint
+
+### Configuration
+
+The genetic algorithm parameters can be modified in `scripts/tutorials/02_scene/inspire_scene_multipleconfig.py`:
+
+```python
+GENETIC_ALGORITHM_CONFIG = {
+    "enabled": True,
+    "target_joint": "index_proximal_joint",
+    "evaluation_interval": 10.0,  # Seconds between evaluations
+    "top_performers_ratio": 0.3,  # Top 30% keep their parameters
+    "middle_performers_ratio": 0.4,  # Middle 40% mutate
+    "bottom_performers_ratio": 0.3,  # Bottom 30% get replaced
+    "stiffness_range": (0.0, 50.0),  # Range for stiffness mutation
+    "damping_range": (0.0, 2.0),    # Range for damping mutation
+    "mutation_noise": 0.1,  # Standard deviation for sampling
+}
+```
+
+### File Structure
+
+```
+scripts/tutorials/02_scene/
+├── inspire_scene_multipleconfig.py    # Main genetic algorithm script
+├── fake_joint_publisher              # ROS2 joint publisher for testing
+├── unified_hand_controller.py        # Unified hand controller
+├── inspire_scene.py                  # Basic Inspire Hand scene
+└── IsaacSim-ros_workspaces/          # ROS2 workspace setup
+
+source/isaaclab_assets/isaaclab_assets/robots/
+├── inspire_hand.py                   # Inspire Hand asset configuration
+└── inspire_hand_right.usd            # Inspire Hand USD model
+
+source/isaaclab_tasks/isaaclab_tasks/manager_based/inspire_hand/
+├── inspire_hand_env_cfg.py           # Environment configuration
+├── inspire_hand_env.py               # Environment implementation
+├── test_config.py                    # Configuration testing
+└── mdp/                              # Custom MDP functions
+    ├── rewards.py                    # Reward functions
+    └── terminations.py               # Termination conditions
+```
+
+### Understanding the Output
+
+The system provides real-time feedback:
+
+1. **Joint Error Reports**: Shows commanded vs actual joint positions for the target joint
+2. **Genetic Algorithm Evolution**: Reports population evolution every 10 seconds
+3. **Performance Statistics**: Best, worst, and average error across all robots
+4. **Parameter Updates**: Shows new stiffness/damping values for each robot
+
+Example output:
+```
+[INFO]: Target Joint Error Report at step 1500 (time: 15.0s)
+[INFO]: Target Joint: index_proximal_joint
+Robot  1: index_proximal_joint    - Commanded=0.750, Actual=0.748, Error=0.002, Stiffness=25.123, Damping=1.234
+Robot  2: index_proximal_joint    - Commanded=0.750, Actual=0.745, Error=0.005, Stiffness=30.456, Damping=0.987
+...
+
+[GA]: Genetic Algorithm Evolution at step 2000 (time: 20.0s)
+[GA]: Best performance: 0.001234
+[GA]: Average performance: 0.005678
+```
+
+
+
+### Using Different Robots
+
+The genetic algorithm framework can be adapted to work with other robots. Here's how to modify the code for different robot types:
+
+#### 1. Robot Asset Configuration
+
+Create or modify the robot configuration in `source/isaaclab_assets/isaaclab_assets/robots/`:
+
+```python
+# Example: source/isaaclab_assets/isaaclab_assets/robots/your_robot.py
+from isaaclab.assets import ArticulationCfg
+from isaaclab.utils import configclass
+
+@configclass
+class YOUR_ROBOT_CFG(ArticulationCfg):
+    """Configuration for Your Robot."""
+    
+    # Robot-specific parameters
+    num_joints = 6  # Update to match your robot's DOF
+    joint_names = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
+    
+    # USD file path
+    usd_file_path = "path/to/your/robot.usd"
+    
+    # Initial state
+    init_state = InitialStateCfg(
+        pos=(0.0, 0.0, 0.5),
+        rot=(1.0, 0.0, 0.0, 0.0),
+        joint_pos={".*": 0.0},
+    )
+    
+    # Actuator configuration
+    actuators = {
+        "joints": ImplicitActuatorCfg(
+            joint_names_expr=[".*"],
+            stiffness_range=(0.0, 50.0),
+            damping_range=(0.0, 2.0),
+        )
+    }
+```
+
+#### 2. Update Joint Mappings
+
+Modify the joint mapping constants in `scripts/tutorials/02_scene/inspire_scene_multipleconfig.py`:
+
+```python
+# Update these constants for your robot
+AVAILABLE_JOINTS = [
+    "joint_1",
+    "joint_2", 
+    "joint_3",
+    "joint_4",
+    "joint_5",
+    "joint_6"
+]
+
+JOINT_NAME_TO_INDEX = {
+    "joint_1": 0,
+    "joint_2": 1, 
+    "joint_3": 2,
+    "joint_4": 3,
+    "joint_5": 4,
+    "joint_6": 5
+}
+
+# Update ROS2 topic to simulation joint mapping
+TOPIC_TO_SIM_JOINT_MAPPING = {
+    0: 0,  # topic_joint_1 -> sim_joint_1
+    1: 1,  # topic_joint_2 -> sim_joint_2
+    2: 2,  # topic_joint_3 -> sim_joint_3
+    3: 3,  # topic_joint_4 -> sim_joint_4
+    4: 4,  # topic_joint_5 -> sim_joint_5
+    5: 5   # topic_joint_6 -> sim_joint_6
+}
+```
+
+#### 3. Modify Scene Configuration
+
+Update the scene configuration class in the same file:
+
+```python
+@configclass
+class YourRobotSceneCfg(InteractiveSceneCfg):
+    """Configuration for your robot scene."""
+    
+    # Import your robot configuration
+    from isaaclab_assets.robots.your_robot import YOUR_ROBOT_CFG
+    
+    def __post_init__(self):
+        super().__post_init__()
+        
+        # Generate robot configurations programmatically
+        num_robots = 20  # Adjust as needed
+        cols = 5
+        rows = 4
+        
+        for i in range(num_robots):
+            robot_num = i + 1
+            col = i % cols
+            row = i // cols
+            
+            x_pos = col * 1.0
+            y_pos = row * 1.0
+            
+            # Create robot configuration with your robot
+            robot_cfg = replace(
+                YOUR_ROBOT_CFG,  # Use your robot config
+                prim_path=f"{{ENV_REGEX_NS}}/Robot{robot_num}",
+                init_state=ArticulationCfg.InitialStateCfg(
+                    pos=(x_pos, y_pos, 0.5),
+                    rot=(0.0, 0.7071, 0.0, 0.7071),
+                    joint_pos={".*": 0.0},
+                ),
+            )
+            
+            setattr(self, f"robot{robot_num}", robot_cfg)
+```
+
+#### 4. Update ROS2 Message Processing
+
+Modify the `ROS2JointController` class to handle your robot's joint data:
+
+```python
+def joint_state_callback(self, msg):
+    """Callback for joint state messages."""
+    try:
+        # Update expected message length for your robot
+        if len(msg.data) != 6:  # Change to match your robot's DOF
+            self.get_logger().warn(f'Expected 6 joint angles, got {len(msg.data)}')
+            return
+        
+        # Extract joint angles for your robot
+        joint_1_angle = msg.data[0]
+        joint_2_angle = msg.data[1]
+        # ... add all your joints
+        
+        # Reset all joint positions
+        self.joint_positions.fill_(0.0)
+        
+        # Map topic indices to simulation joint indices
+        topic_data = [
+            (0, joint_1_angle),
+            (1, joint_2_angle),
+            # ... add all your joints
+        ]
+        
+        for topic_idx, angle in topic_data:
+            sim_joint_idx = TOPIC_TO_SIM_JOINT_MAPPING[topic_idx]
+            
+            # Scale angles appropriately for your robot
+            # Most joints: 0-1000 -> 0-1.5 (adjust ranges as needed)
+            scaled_angle = (angle / 1000.0) * 1.5
+            
+            self.joint_positions[sim_joint_idx] = scaled_angle
+        
+        self.latest_message_received = True
+        self.message_count += 1
+        
+    except Exception as e:
+        self.get_logger().error(f'Error processing joint state message: {e}')
+```
+
+#### 5. Update Genetic Algorithm Configuration
+
+Modify the genetic algorithm parameters for your robot:
+
+```python
+GENETIC_ALGORITHM_CONFIG = {
+    "enabled": True,
+    "target_joint": "joint_1",  # Change to your target joint
+    "evaluation_interval": 10.0,
+    "top_performers_ratio": 0.3,
+    "middle_performers_ratio": 0.4,
+    "bottom_performers_ratio": 0.3,
+    "stiffness_range": (0.0, 50.0),  # Adjust for your robot
+    "damping_range": (0.0, 2.0),     # Adjust for your robot
+    "mutation_noise": 0.1,
+}
+```
+
+
+```
+
+#### 6. Testing Your Changes
+
+1. **Test robot configuration**:
+```bash
+cd source/isaaclab_assets/isaaclab_assets/robots
+python -c "from your_robot import YOUR_ROBOT_CFG; print('Configuration loaded successfully')"
+```
+
+2. **Test scene setup**:
+```bash
+./isaaclab.sh -p scripts/tutorials/02_scene/your_robot_scene.py --num_envs 1
+```
+
+3. **Test ROS2 integration**:
+```bash
+# Publish test data to your robot's topic
+ros2 topic pub /real_hand_joints std_msgs/msg/Float64MultiArray "data: [500, 500, 500, 500, 500, 500]"
+```
+
+#### Getting Help
+
+- Check the [Inspire Hand README](source/isaaclab_tasks/isaaclab_tasks/manager_based/inspire_hand/README.md) for detailed environment documentation
+- Review the demo scripts in `scripts/tutorials/02_scene/` for working examples
+- Test ROS2 connectivity with `test_ros2.py` before running the full system
+- Refer to existing robot configurations in `source/isaaclab_assets/isaaclab_assets/robots/` for reference
+
 
 ## Contributing to Isaac Lab
 
