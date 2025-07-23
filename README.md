@@ -342,7 +342,6 @@ GENETIC_ALGORITHM_CONFIG = {
 ```
 
 
-```
 
 #### 6. Testing Your Changes
 
@@ -363,12 +362,216 @@ python -c "from your_robot import YOUR_ROBOT_CFG; print('Configuration loaded su
 ros2 topic pub /real_hand_joints std_msgs/msg/Float64MultiArray "data: [500, 500, 500, 500, 500, 500]"
 ```
 
+### Connecting to Real Inspire Hand
+
+The genetic algorithm framework can be connected to a real Inspire Hand for hardware-in-the-loop optimization. This enables real-time parameter optimization using actual robot hardware.
+
+#### Prerequisites
+
+1. **Real Inspire Hand** with network connectivity
+2. **Network connection** to the robot hand (default IP: `192.168.137.39`, port: `2333`)
+3. **Python 3.6+** with required dependencies
+4. **ROS2** for real-time data publishing
+
+#### Hardware Setup
+
+1. **Power on the Inspire Hand** and ensure it's connected to your network
+2. **Verify network connectivity**:
+   ```bash
+   ping 192.168.137.39
+   ```
+
+
+#### Interactive Hand Testing
+
+The `interactive_hand_testing.py` script provides a comprehensive interface for testing and controlling the real Inspire Hand.
+
+##### Starting Interactive Testing
+
+```bash
+# Navigate to the IPcontrol directory
+cd scripts/tutorials/02_scene/IsaacSim-ros_workspaces/humble_ws/IPcontrol
+
+# Run interactive hand testing
+python interactive_hand_testing.py
+```
+
+##### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `read` | Read current joint positions |
+| `move <dof> <position>` | Smooth move single joint |
+| `moveall <pos1> <pos2>...` | Smooth move all 6 joints |
+| `tune <dof>` | Sweep joint back and forth (0-1000) |
+| `tune stop` | Stop joint tuning |
+| `freq <frequency>` | Set movement frequency (Hz) |
+| `inc <increment>` | Set increment size (degrees) |
+| `monitor start/stop` | Start/stop position monitoring |
+| `print start/stop` | Start/stop continuous position printing |
+| `history` | Show position history |
+| `clear` | Clear position history |
+| `ros start/stop` | Start/stop ROS publishing |
+| `publish` | Publish current positions to ROS once |
+| `demo` | Run smooth movement demo |
+| `config` | Show current configuration |
+| `help` | Show help information |
+| `quit` | Exit program |
+
+##### Joint Mapping
+
+| DOF | Finger/Component | Joint Name |
+|-----|------------------|------------|
+| 0 | Little Finger | pinky_proximal_joint |
+| 1 | Ring Finger | ring_proximal_joint |
+| 2 | Middle Finger | middle_proximal_joint |
+| 3 | Index Finger | index_proximal_joint |
+| 4 | Thumb Bend | thumb_proximal_pitch_joint |
+| 5 | Thumb Rotate | thumb_proximal_yaw_joint |
+
+##### Position Values
+
+- **Range**: 0-1000 (dimensionless)
+- **0**: Fully extended/neutral position
+- **1000**: Fully bent/rotated position
+- **-1**: No change (maintain current position)
+
+#### Real-Time ROS2 Integration
+
+The interactive testing script can publish joint positions to ROS2 topics for real-time integration with the genetic algorithm.
+
+##### Starting ROS2 Publishing
+
+```bash
+# In the interactive testing interface
+> ros start
+```
+
+This will publish joint positions to `/real_hand_joints` topic in the format expected by the genetic algorithm.
+
+
+
+#### Hardware-in-the-Loop Optimization
+
+To run the genetic algorithm with real hardware:
+
+1. **Start interactive hand testing**:
+   ```bash
+   cd scripts/tutorials/02_scene/IsaacSim-ros_workspaces/humble_ws/IPcontrol
+   python interactive_hand_testing.py
+   ```
+
+2. **Enable ROS2 publishing**:
+   ```
+   > ros start
+   ```
+
+3. **Set higher frequency or smoother movement**:
+   ```
+   > freq 90
+   ```
+
+4. **Tune one finger**:
+   ```
+   > tune 0 (for little finger)
+   ```
+
+5. **Run the genetic algorithm** (in another terminal):
+   ```bash
+   ./isaaclab.sh -p scripts/tutorials/02_scene/inspire_scene_multipleconfig.py --num_envs 1 --target_joint pinky_proximal_joint
+   ```
+
+6. **Monitor real-time optimization**:
+   - The genetic algorithm will receive real joint positions from the hardware
+   - Parameter optimization will be based on actual tracking performance
+   - Real-time error reports will show hardware vs simulation differences
+
+#### Configuration Files
+
+The real hand control system consists of several key files:
+
+```
+scripts/tutorials/02_scene/IsaacSim-ros_workspaces/humble_ws/IPcontrol/
+├── interactive_hand_testing.py    # Main interactive interface
+├── hand_testing.py                # Advanced hand controller with smooth movement
+├── robot_hand_controller.py       # Low-level UDP communication
+├── hand_plotter.py                # Real-time plotting and visualization
+├── test_with_plot.py              # Testing with real-time plots
+└── README.md                      # Detailed hardware documentation
+```
+
+#### Network Configuration
+
+The default network configuration can be modified in the controller:
+
+```python
+# In robot_hand_controller.py or hand_testing.py
+controller = RobotHandController(
+    host="192.168.137.39",  # Robot hand IP address
+    port=2333,              # UDP port
+    hand_id=1               # Hand ID
+)
+```
+
+
+### Recording ROS Bags for Training
+
+ROS bags can be used to record real robot data for training agents or for offline analysis and optimization.
+
+#### Recording Joint Data
+
+##### Using Interactive Testing with ROS2 Publishing
+
+1. **Start interactive hand testing with ROS2 publishing**:
+   ```bash
+   cd scripts/tutorials/02_scene/IsaacSim-ros_workspaces/humble_ws/IPcontrol
+   python interactive_hand_testing.py
+   ```
+
+2. **Enable ROS2 publishing**:
+   ```
+   > ros start
+   ```
+
+3. **Record joint data** (in another terminal):
+   ```bash
+   # Record all joint data
+   ros2 bag record /real_hand_joints -o inspire_hand_joints_$(date +%Y%m%d_%H%M%S)
+   
+4. **Perform movements** in the interactive interface:
+   ```
+   > tune 0
+
+   ```
+
+5. **Stop recording**:
+   ```bash
+   # Press Ctrl+C to stop recording
+   ```
+
+
+##### From Genetic Algorithm
+
+1. **Start the genetic algorithm**:
+   ```bash
+   ./isaaclab.sh -p scripts/tutorials/02_scene/inspire_scene_multipleconfig.py --num_envs 1 --target_joint index_proximal_joint
+   ```
+2.**Play ros bag on loop to train**:
+# Play back bag data
+ros2 bag play inspire_hand_joints_20250101_120000/ --loop
+
+
+```
+
+
+
 #### Getting Help
 
 - Check the [Inspire Hand README](source/isaaclab_tasks/isaaclab_tasks/manager_based/inspire_hand/README.md) for detailed environment documentation
 - Review the demo scripts in `scripts/tutorials/02_scene/` for working examples
 - Test ROS2 connectivity with `test_ros2.py` before running the full system
 - Refer to existing robot configurations in `source/isaaclab_assets/isaaclab_assets/robots/` for reference
+- Check the [IPcontrol README](scripts/tutorials/02_scene/IsaacSim-ros_workspaces/humble_ws/IPcontrol/README.md) for detailed hardware documentation
 
 
 ## Contributing to Isaac Lab
