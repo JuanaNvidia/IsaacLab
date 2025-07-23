@@ -536,7 +536,7 @@ ROS bags can be used to record real robot data for training agents or for offlin
 3. **Record joint data** (in another terminal):
    ```bash
    # Record all joint data
-   ros2 bag record /real_hand_joints -o inspire_hand_joints_$(date +%Y%m%d_%H%M%S)
+   ros2 bag record /real_hand_joints
    
 4. **Perform movements** in the interactive interface:
    ```
